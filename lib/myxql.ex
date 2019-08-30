@@ -18,6 +18,7 @@ defmodule MyXQL do
           | {:collation, String.t() | nil}
           | {:ssl, boolean()}
           | {:ssl_opts, [:ssl.tls_client_option()]}
+          | {:enable_cleartext_plugin, boolean()}
           | {:connect_timeout, timeout()}
           | {:handshake_timeout, timeout()}
           | {:ping_timeout, timeout()}
@@ -52,7 +53,8 @@ defmodule MyXQL do
 
     * `:username` - Username (default: `USER` env variable)
 
-    * `:password` - Password (default: `MYSQL_PWD` env variable, then `nil`)
+    * `:password` - Password (default: `MYSQL_PWD` env variable, then `nil`. Can also be a zero-arity function which will be invoked upon
+      connect)
 
     * `:charset` - A connection charset. On connection handshake, the charset is set to `utf8mb4`,
       but if this option is set, an additional `SET NAMES <charset> [COLLATE <collation>]` query
@@ -63,6 +65,8 @@ defmodule MyXQL do
       it overwrites the default collation for the given charset. (default: `nil`)
 
     * `:ssl` - Set to `true` if SSL should be used (default: `false`)
+
+    * `:enable_cleartext_plugin` - Set to `true` to enable the cleartext authentication plugin (default: `false`)
 
     * `:ssl_opts` - A list of SSL options, see `:ssl.connect/2` (default: `[]`)
 

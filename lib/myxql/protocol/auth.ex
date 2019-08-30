@@ -23,24 +23,26 @@ defmodule MyXQL.Protocol.Auth do
   end
 
   def auth_response(config, auth_plugin_name, initial_auth_plugin_data) do
+    password = fetch_password(config)
+
     cond do
-      config.password == nil ->
+      password == nil ->
         ""
 
       auth_plugin_name == "mysql_native_password" ->
-        mysql_native_password(config.password, initial_auth_plugin_data)
+        mysql_native_password(password, initial_auth_plugin_data)
 
       auth_plugin_name == "sha256_password" and config.ssl? ->
-        config.password <> <<0>>
+        password <> <<0>>
 
       auth_plugin_name == "sha256_password" and not config.ssl? ->
         <<1>>
 
       auth_plugin_name == "caching_sha2_password" ->
-        sha256_password(config.password, initial_auth_plugin_data)
+        sha256_password(password, initial_auth_plugin_data)
 
       auth_plugin_name == "mysql_clear_password" and config.enable_cleartext_plugin ->
-        config.password
+        password
     end
   end
 
@@ -54,6 +56,13 @@ defmodule MyXQL.Protocol.Auth do
       password_sha,
       :crypto.hash(type, auth_plugin_data <> :crypto.hash(type, password_sha))
     )
+  end
+
+  defp fetch_password(config) do
+    case config.password do
+      func when is_function(func) -> func.()
+      other -> other
+    end
   end
 
   defp bxor_binary(<<l::160>>, <<r::160>>), do: <<l ^^^ r::160>>

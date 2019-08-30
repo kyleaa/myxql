@@ -38,6 +38,9 @@ defmodule MyXQL.Protocol.Auth do
 
       auth_plugin_name == "caching_sha2_password" ->
         sha256_password(config.password, initial_auth_plugin_data)
+
+      auth_plugin_name == "mysql_clear_password" and config.enable_cleartext_plugin ->
+        config.password
     end
   end
 

@@ -20,6 +20,7 @@ defmodule MyXQL.Client do
       :database,
       :ssl?,
       :ssl_opts,
+      :enable_cleartext_plugin,
       :connect_timeout,
       :handshake_timeout,
       :socket_options,
@@ -40,6 +41,7 @@ defmodule MyXQL.Client do
         database: Keyword.get(opts, :database),
         ssl?: Keyword.get(opts, :ssl, false),
         ssl_opts: Keyword.get(opts, :ssl_opts, []),
+        enable_cleartext_plugin: Keyword.get(opts, :enable_cleartext_plugin, false),
         connect_timeout: Keyword.get(opts, :connect_timeout, @default_timeout),
         handshake_timeout: Keyword.get(opts, :handshake_timeout, @default_timeout),
         socket_options:

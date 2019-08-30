@@ -240,10 +240,14 @@ defmodule MyXQL.Protocol do
   end
 
   def decode_auth_response(<<0xFE, rest::binary>>) do
-    {plugin_name, rest} = take_string_nul(rest)
-    {plugin_data, ""} = take_string_nul(rest)
+    case take_string_nul(rest) do
+      {plugin_name, ""} ->
+        auth_switch_request(plugin_name: plugin_name)
 
-    auth_switch_request(plugin_name: plugin_name, plugin_data: plugin_data)
+      {plugin_name, rest} ->
+        {plugin_data, ""} = take_string_nul(rest)
+        auth_switch_request(plugin_name: plugin_name, plugin_data: plugin_data)
+    end
   end
 
   #################################################################

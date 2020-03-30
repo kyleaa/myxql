@@ -109,6 +109,20 @@ defmodule MyXQL.Protocol.ValueTest do
         assert insert_and_get(c, "my_time", ~T[09:10:20.123]) == ~T[09:10:20]
       end
 
+      if @protocol == :binary do
+        test "MYSQL_TYPE_TIME - negative time", c do
+          assert_raise ArgumentError, ~r"cannot decode \"-01:00:00\" as time", fn ->
+            query!(c, "SELECT TIME(SUBTIME('00:00:00', '01:00:00'))")
+          end
+        end
+
+        test "MYSQL_TYPE_TIME - more than 24h", c do
+          assert_raise ArgumentError, ~r"cannot decode \"1d 01:00:00\" as time", fn ->
+            query!(c, "SELECT TIME(ADDTIME('23:00:00', '02:00:00'))")
+          end
+        end
+      end
+
       @tag timestamp_precision: true
       test "MYSQL_TYPE_TIME precision", c do
         assert_roundtrip(c, "my_time6", ~T[09:10:20.123456])
@@ -227,6 +241,16 @@ defmodule MyXQL.Protocol.ValueTest do
         assert_roundtrip(c, "my_longblob", blob)
       end
 
+      test "MYSQL_TYPE_LONG_BLOB in payload equal to max packet size", c do
+        blob = String.duplicate("a", 16_777_209)
+        assert_roundtrip(c, "my_longblob", blob)
+      end
+
+      test "MYSQL_TYPE_LONG_BLOB in payload above max packet size", c do
+        blob = String.duplicate("a", 16_777_209 + 100_000)
+        assert_roundtrip(c, "my_longblob", blob)
+      end
+
       test "MYSQL_TYPE_VAR_STRING - SQL VARBINARY", c do
         assert_roundtrip(c, "my_varbinary3", <<1, 2, 3>>)
       end
@@ -268,10 +292,72 @@ defmodule MyXQL.Protocol.ValueTest do
         assert_roundtrip(c, "my_json", [1, [2, 3]])
         assert_roundtrip(c, "my_json", %{})
         assert_roundtrip(c, "my_json", %{"a" => ["foo", 42]})
+
+        assert_raise MyXQL.Error, ~r/ER_INVALID_JSON_PATH/, fn ->
+          query!(c, "SELECT JSON_EXTRACT('{\"a\": [1, 2]}', 'bad')")
+        end
       end
 
       test "CHAR", c do
         assert_roundtrip(c, "my_char", "é")
+      end
+
+      @tag geometry: true
+      test "POINT", c do
+        assert_roundtrip(c, "my_point", %Geo.Point{coordinates: {0, 0}})
+      end
+
+      @tag geometry: true
+      test "POINT with SRID", c do
+        assert_roundtrip(c, "my_point", %Geo.Point{coordinates: {0, 0}, srid: 4326})
+      end
+
+      @tag geometry: true
+      test "LINESTRING", c do
+        assert_roundtrip(c, "my_linestring", %Geo.LineString{
+          coordinates: [{30, 10}, {10, 30}, {40, 40}]
+        })
+      end
+
+      @tag geometry: true
+      test "MULTIPOINT", c do
+        assert_roundtrip(c, "my_multipoint", %Geo.MultiPoint{
+          coordinates: [{1.0, 1.0}, {2.0, 2.0}]
+        })
+      end
+
+      @tag geometry: true
+      test "MULTILINESTRING", c do
+        assert_roundtrip(c, "my_multilinestring", %Geo.MultiLineString{
+          coordinates: [[{10, 10}, {20, 20}], [{15, 15}, {30, 15}]]
+        })
+      end
+
+      @tag geometry: true
+      test "POLYGON", c do
+        assert_roundtrip(c, "my_polygon", %Geo.Polygon{
+          coordinates: [[{30, 10}, {40, 40}, {20, 40}, {10, 20}, {30, 10}]]
+        })
+      end
+
+      @tag geometry: true
+      test "MULTIPOLYGON", c do
+        assert_roundtrip(c, "my_multipolygon", %Geo.MultiPolygon{
+          coordinates: [
+            [[{40, 40}, {20, 45}, {45, 30}, {40, 40}]],
+            [
+              [{20, 35}, {10, 30}, {10, 10}, {30, 5}, {45, 20}, {20, 35}],
+              [{30, 20}, {20, 15}, {20, 25}, {30, 20}]
+            ]
+          ]
+        })
+      end
+
+      @tag geometry: true
+      test "GEOMETRYCOLLECTION", c do
+        assert_roundtrip(c, "my_geometrycollection", %Geo.GeometryCollection{
+          geometries: [%Geo.Point{coordinates: {54.1745659, 15.5398456}}]
+        })
       end
     end
   end
@@ -352,41 +438,7 @@ defmodule MyXQL.Protocol.ValueTest do
 
   defp insert(%{protocol: :text} = c, fields, values) when is_list(fields) and is_list(values) do
     fields = Enum.map_join(fields, ", ", &"`#{&1}`")
-
-    values =
-      Enum.map_join(values, ", ", fn
-        nil ->
-          "NULL"
-
-        true ->
-          "TRUE"
-
-        false ->
-          "FALSE"
-
-        %DateTime{} = datetime ->
-          "'#{NaiveDateTime.to_iso8601(datetime)}'"
-
-        list when is_list(list) ->
-          "'#{Jason.encode!(list)}'"
-
-        %_{} = struct ->
-          "'#{struct}'"
-
-        map when is_map(map) ->
-          "'#{Jason.encode!(map)}'"
-
-        value when is_binary(value) ->
-          "'#{value}'"
-
-        value when is_bitstring(value) ->
-          size = bit_size(value)
-          <<value::size(size)>> = value
-          "B'#{Integer.to_string(value, 2)}'"
-
-        value ->
-          "'#{value}'"
-      end)
+    values = Enum.map_join(values, ", ", &encode_text/1)
 
     %MyXQL.Result{last_insert_id: id} =
       query!(c, "INSERT INTO test_types (#{fields}) VALUES (#{values})")
@@ -405,6 +457,39 @@ defmodule MyXQL.Protocol.ValueTest do
 
   defp insert(c, field, value) when is_binary(field) do
     insert(c, [field], [value])
+  end
+
+  defp encode_text(nil), do: "NULL"
+  defp encode_text(true), do: "TRUE"
+  defp encode_text(false), do: "FALSE"
+  defp encode_text(%DateTime{} = datetime), do: "'#{NaiveDateTime.to_iso8601(datetime)}'"
+  defp encode_text(%Geo.Point{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.LineString{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.Polygon{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.MultiPoint{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.MultiLineString{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.MultiPolygon{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%Geo.GeometryCollection{} = geo), do: encode_text_geo(geo)
+  defp encode_text(%_{} = struct), do: "'#{struct}'"
+  defp encode_text(map) when is_map(map), do: "'#{Jason.encode!(map)}'"
+  defp encode_text(list) when is_list(list), do: "'#{Jason.encode!(list)}'"
+  defp encode_text(value) when is_binary(value), do: "'#{value}'"
+
+  defp encode_text(value) when is_bitstring(value) do
+    size = bit_size(value)
+    <<value::size(size)>> = value
+    "B'#{Integer.to_string(value, 2)}'"
+  end
+
+  defp encode_text(value), do: "'#{value}'"
+
+  defp encode_text_geo(value) do
+    if srid = value.srid do
+      value = %{value | srid: nil}
+      "ST_GeomFromText('#{Geo.WKT.encode!(value)}', #{srid})"
+    else
+      "ST_GeomFromText('#{Geo.WKT.encode!(value)}')"
+    end
   end
 
   defp get(c, fields, id) when is_list(fields) do

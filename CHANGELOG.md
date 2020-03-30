@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.4.0 (2020-03-30)
+
+Enhancements:
+
+* Support receiving packets larger than 16MB
+
+Bug fixes:
+
+* Require `:ssl` & `:public_key` applications
+
+* Enforce prepare names to be unique
+
+* Do not leak statements on multiple executions of the same name in `prepare_execute`
+
+* Do not leak statements with rebound `:cache_statement`
+
+## v0.3.4 (2020-03-19)
+
+* Close statements after query errors
+
+## v0.3.3 (2020-02-10)
+
+* Fix bug when decoding invalid json path error
+
+## v0.3.2 (2020-01-29)
+
+* Improve error messages and docs on unsupported time values
+
+## v0.3.1 (2019-11-28)
+
+Bug fixes:
+
+* Revert: Re-use repeated prepared statements in `:unnamed` mode
+
+## v0.3.0 (2019-11-25)
+
+### Enhancements
+
+* Re-use repeated prepared statements in `:unnamed` mode
+
+* Geometry types support
+
+### Bug fixes
+
+* Fix `mysql_native_authentication` on `auth_switch_request`
+
+* Handle multiple packets on ping
+
 ## v0.2.10 (2019-10-29)
 
 ### Enhancements

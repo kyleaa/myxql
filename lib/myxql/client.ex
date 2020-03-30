@@ -165,7 +165,8 @@ defmodule MyXQL.Client do
   end
 
   def recv_packet(client, decoder, timeout \\ :infinity) do
-    new_decoder = fn payload, "", nil -> {:halt, decoder.(payload)} end
+    # even if next packet follows, ignore it
+    new_decoder = fn payload, _next_packet, nil -> {:halt, decoder.(payload)} end
     recv_packets(client, new_decoder, nil, timeout)
   end
 
@@ -185,14 +186,18 @@ defmodule MyXQL.Client do
 
   ## Internals
 
+  defp recv_packets(data, decode, decoder_state, timeout, client, partial \\ <<>>)
+
   defp recv_packets(
          <<size::uint3, _seq::uint1, payload::string(size), rest::binary>>,
          decoder,
          decoder_state,
          timeout,
-         client
-       ) do
-    case decoder.(payload, rest, decoder_state) do
+         client,
+         partial
+       )
+       when size < @default_max_packet_size do
+    case decoder.(<<partial::binary, payload::binary>>, rest, decoder_state) do
       {:cont, decoder_state} ->
         recv_packets(rest, decoder, decoder_state, timeout, client)
 
@@ -204,11 +209,39 @@ defmodule MyXQL.Client do
     end
   end
 
+  # If the packet size equals max packet size, save the payload, receive
+  # more data and try again
+  defp recv_packets(
+         <<size::uint3, _seq::uint1, payload::string(size), rest::binary>>,
+         decoder,
+         decoder_state,
+         timeout,
+         client,
+         partial
+       )
+       when size >= @default_max_packet_size do
+    recv_packets(
+      rest,
+      decoder,
+      decoder_state,
+      timeout,
+      client,
+      <<partial::binary, payload::binary>>
+    )
+  end
+
   # If we didn't match on a full packet, receive more data and try again
-  defp recv_packets(rest, decoder, decoder_state, timeout, client) do
+  defp recv_packets(rest, decoder, decoder_state, timeout, client, partial) do
     case recv_data(client, timeout) do
       {:ok, data} ->
-        recv_packets(<<rest::binary, data::binary>>, decoder, decoder_state, timeout, client)
+        recv_packets(
+          <<rest::binary, data::binary>>,
+          decoder,
+          decoder_state,
+          timeout,
+          client,
+          partial
+        )
 
       {:error, _} = error ->
         error
@@ -357,7 +390,7 @@ defmodule MyXQL.Client do
 
     case send_recv_packet(client, payload, &decode_auth_response/1, sequence_id) do
       {:ok, auth_switch_request(plugin_name: auth_plugin_name, plugin_data: auth_plugin_data)} ->
-        auth_response = Auth.auth_response(config, auth_plugin_name, initial_auth_plugin_data)
+        auth_response = Auth.auth_response(config, auth_plugin_name, auth_plugin_data)
 
         case send_recv_packet(client, auth_response, &decode_auth_response/1, sequence_id + 2) do
           {:ok, :full_auth} ->

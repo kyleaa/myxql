@@ -9,12 +9,33 @@ defmodule MyXQL.SyncTest do
     assert prepared_stmt_count() == 0
 
     MyXQL.query!(conn, "SELECT 42", [], cache_statement: "42")
+    assert prepared_stmt_count() == 0
+  end
+
+  test "do not leak statements with rebound :cache_statement" do
+    {:ok, conn} = MyXQL.start_link(@opts)
+    assert prepared_stmt_count() == 0
+
+    MyXQL.query!(conn, "SELECT 42", [], cache_statement: "select number")
     assert prepared_stmt_count() == 1
 
-    MyXQL.query!(conn, "SELECT 1337", [], cache_statement: "69")
+    MyXQL.query!(conn, "SELECT 34", [], cache_statement: "select number")
     assert prepared_stmt_count() == 1
+  end
 
-    MyXQL.query!(conn, "SELECT 42", [], cache_statement: "42")
+  test "do not leak statements with insert and failed insert" do
+    {:ok, conn} = MyXQL.start_link(@opts)
+    assert prepared_stmt_count() == 0
+    {:ok, _} = MyXQL.query(conn, "INSERT INTO uniques(a) VALUES (1)")
+    assert prepared_stmt_count() == 0
+    {:error, _} = MyXQL.query(conn, "INSERT INTO uniques(a) VALUES (1)")
+    assert prepared_stmt_count() == 0
+  end
+
+  test "do not leak statements on multiple executions of the same name in prepare_execute" do
+    {:ok, conn} = MyXQL.start_link(@opts)
+    {:ok, _, _} = MyXQL.prepare_execute(conn, "foo", "SELECT 42")
+    {:ok, _, _} = MyXQL.prepare_execute(conn, "foo", "SELECT 42")
     assert prepared_stmt_count() == 1
   end
 
@@ -61,19 +82,5 @@ defmodule MyXQL.SyncTest do
   defp prepared_stmt_count() do
     [%{"Value" => count}] = TestHelper.mysql!("show global status like 'Prepared_stmt_count'")
     String.to_integer(count)
-  end
-
-  @tag capture_log: true
-  test "connect with SSL but without starting :ssl" do
-    Application.stop(:ssl)
-
-    assert_raise RuntimeError,
-                 ~r"cannot be established because `:ssl` application is not started",
-                 fn ->
-                   opts = [ssl: true] ++ @opts
-                   MyXQL.start_link(opts)
-                 end
-  after
-    Application.ensure_all_started(:ssl)
   end
 end

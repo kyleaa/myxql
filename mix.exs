@@ -1,7 +1,7 @@
 defmodule MyXQL.MixProject do
   use Mix.Project
 
-  @version "0.2.10"
+  @version "0.4.0"
   @source_url "https://github.com/elixir-ecto/myxql"
 
   def project() do
@@ -21,15 +21,12 @@ defmodule MyXQL.MixProject do
 
   def application() do
     [
-      extra_applications: extra_applications(Mix.env()),
+      extra_applications: [:ssl, :public_key],
       env: [
         json_library: Jason
       ]
     ]
   end
-
-  defp extra_applications(env) when env in [:dev, :test], do: [:ssl | extra_applications(:prod)]
-  defp extra_applications(_), do: [:logger, :crypto]
 
   defp package() do
     [
@@ -51,8 +48,9 @@ defmodule MyXQL.MixProject do
       {:db_connection, "~> 2.0", db_connection_opts()},
       {:decimal, "~> 1.6"},
       {:jason, "~> 1.0", optional: true},
+      {:geo, "~> 3.3", optional: true},
       {:binpp, ">= 0.0.0", only: [:dev, :test]},
-      {:dialyxir, "~> 1.0-rc", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:benchee, ">= 0.0.0", only: :dev, runtime: false}
     ]
